@@ -110,19 +110,35 @@ func GetInstances(svc *ec2.EC2, filters map[string]string, tagFilters map[string
 
 	params := &ec2.DescribeInstancesInput{Filters: myFilters}
 
-	resp, err := svc.DescribeInstances(params)
-	if err != nil {
-		return nil, err
-	}
+	var (
+		instances Instances
+		nextToken *string
+	)
 
-	var instances Instances
-	for _, res := range resp.Reservations {
-		for _, inst := range res.Instances {
-			instance, err := GetInstance(inst)
-			if err != nil {
-				return nil, err
+	for {
+		if nextToken != nil {
+			params.NextToken = nextToken
+		}
+
+		resp, err := svc.DescribeInstances(params)
+		if err != nil {
+			return nil, err
+		}
+
+		nextToken = resp.NextToken
+
+		for _, res := range resp.Reservations {
+			for _, inst := range res.Instances {
+				instance, err := GetInstance(inst)
+				if err != nil {
+					return nil, err
+				}
+				instances = append(instances, instance)
 			}
-			instances = append(instances, instance)
+		}
+
+		if nextToken == nil {
+			break
 		}
 	}
 
