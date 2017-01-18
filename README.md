@@ -39,6 +39,8 @@ Usage of ec2hosts:
         Backup content of file before updating (default true)
   -dry-run
         Print updated file content to stdout only
+  -exclude string
+        Pattern of hostname to exclude
   -file string
         Path to file to update (default "/etc/hosts")
   -name string
