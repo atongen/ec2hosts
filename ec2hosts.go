@@ -180,7 +180,7 @@ func Update(input io.Reader, instances Instances, name, public string) ([]byte, 
 					} else {
 						ip = inst.PrivateIpAddress
 					}
-					_, err = fmt.Fprintf(&content, "%s %s\n", ip, inst.Name)
+					_, err = fmt.Fprintf(&content, "%s %s # %s %s\n", ip, inst.Name, inst.Id, inst.Type)
 					if err != nil {
 						return content.Bytes(), err
 					}
@@ -222,7 +222,7 @@ func Update(input io.Reader, instances Instances, name, public string) ([]byte, 
 			} else {
 				ip = inst.PrivateIpAddress
 			}
-			_, err = fmt.Fprintf(&content, "%s %s\n", ip, inst.Name)
+			_, err = fmt.Fprintf(&content, "%s %s # %s %s\n", ip, inst.Name, inst.Id, inst.Type)
 			if err != nil {
 				return content.Bytes(), err
 			}
