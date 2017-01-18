@@ -81,7 +81,7 @@ func GetInstance(inst *ec2.Instance) (*Instance, error) {
 	return &myInst, nil
 }
 
-func GetInstances(svc *ec2.EC2, filters map[string]string, tagFilters map[string]string) (Instances, error) {
+func GetInstances(svc *ec2.EC2, filters map[string]string, tagFilters map[string]string, exclude string) (Instances, error) {
 	myFilters := []*ec2.Filter{
 		&ec2.Filter{
 			Name: aws.String("instance-state-name"),
@@ -135,7 +135,9 @@ func GetInstances(svc *ec2.EC2, filters map[string]string, tagFilters map[string
 					return nil, err
 				}
 				if HostRe.MatchString(instance.Name) {
-					instances = append(instances, instance)
+					if exclude == "" || !strings.Contains(instance.Name, exclude) {
+						instances = append(instances, instance)
+					}
 				}
 			}
 		}

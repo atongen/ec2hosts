@@ -39,6 +39,7 @@ var (
 	vpcIdFlag   = flag.String("vpc-id", "", "Filter EC2 instances by vpc-id")
 	fileFlag    = flag.String("file", "/etc/hosts", "Path to file to update")
 	publicFlag  = flag.String("public", "", "Pattern to use to match public hosts")
+	excludeFlag = flag.String("exclude", "", "Pattern of hostname to exclude")
 	dryRunFlag  = flag.Bool("dry-run", false, "Print updated file content to stdout only")
 	backupFlag  = flag.Bool("backup", true, "Backup content of file before updating")
 	tagFlags    StrFlags
@@ -83,7 +84,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	instances, err := GetInstances(svc, filters, tagFilters)
+	instances, err := GetInstances(svc, filters, tagFilters, *excludeFlag)
 	if err != nil {
 		log.Fatal(err)
 	}
