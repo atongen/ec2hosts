@@ -25,11 +25,6 @@ type Instance struct {
 	PublicIpAddress  string
 }
 
-func (i *Instance) String() string {
-	return fmt.Sprintf("name: %s, id: %s, type: %s, private ip: %s, public ip: %s",
-		i.Name, i.Id, i.Type, i.PrivateIpAddress, i.PublicIpAddress)
-}
-
 type Instances []*Instance
 
 func (s Instances) Len() int {

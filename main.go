@@ -2,49 +2,91 @@ package main
 
 import (
 	"bytes"
+	"flag"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
+	"strings"
 	"time"
 )
 
-func main() {
-	region := "us-east-1"
+type StrFlags []string
 
-	svc, err := Ec2Service(region)
-	if err != nil {
-		log.Fatal(err)
+func (s *StrFlags) String() string {
+	return strings.Join(*s, ", ")
+}
+
+func (s *StrFlags) Set(value string) error {
+	*s = append(*s, value)
+	return nil
+}
+
+// cli flags
+var (
+	actionFlag = flag.String("action", "update", "Action to perform: 'update', 'delete', or 'delete-all'")
+	nameFlag   = flag.String("name", "", "Name of block of hosts in file")
+	regionFlag = flag.String("region", "us-east-1", "AWS Region")
+	vpcIdFlag  = flag.String("vpc-id", "", "Filter EC2 instances by vpc-id")
+	fileFlag   = flag.String("file", "/etc/hosts", "Path to file to update")
+	publicFlag = flag.String("public", "", "Pattern to use to match public hosts")
+	dryRunFlag = flag.Bool("dry-run", false, "Print updated file content to stdout only")
+	backupFlag = flag.Bool("backup", true, "Backup content of file before updating")
+	tagFlags   StrFlags
+)
+
+func init() {
+	flag.Var(&tagFlags, "tag", "Add instance tag filters, should be of the form -tag 'key:value'")
+}
+
+func main() {
+	flag.Parse()
+
+	if *actionFlag != "update" && *actionFlag != "delete" && *actionFlag != "delete-all" {
+		log.Fatal("action must be 'update', 'delete', or 'delete-all'")
+	}
+
+	if *actionFlag != "delete-all" && *nameFlag == "" {
+		log.Fatal("name is required")
 	}
 
 	filters := map[string]string{}
+	if *vpcIdFlag != "" {
+		filters["vpc-id"] = *vpcIdFlag
+	}
+
 	tagFilters := map[string]string{}
+	for _, tag := range tagFlags {
+		vals := strings.Split(tag, ":")
+		if len(vals) != 2 {
+			log.Fatalf("Invalid tag filter: %s\n", tag)
+		}
+		tagFilters[vals[0]] = vals[1]
+	}
+
+	svc, err := Ec2Service(*regionFlag)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	instances, err := GetInstances(svc, filters, tagFilters)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	action := "update"
-	name := "testApp"
-	file := "/etc/hosts"
-	public := "ansible"
-	dryRun := false
-	backup := true
-
-	fr, err := os.OpenFile(file, os.O_RDONLY, 0644)
+	fr, err := os.OpenFile(*fileFlag, os.O_RDONLY, 0644)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	var content []byte
-	switch action {
+	switch *actionFlag {
 	default:
-		log.Fatalf("Unknown action: %s\n", action)
+		log.Fatalf("Unknown action: %s\n", *actionFlag)
 	case "update":
-		content, err = Update(fr, instances, name, public)
+		content, err = Update(fr, instances, *nameFlag, *publicFlag)
 	case "delete":
-		content, err = Delete(fr, name)
+		content, err = Delete(fr, *nameFlag)
 	case "delete-all":
 		content, err = DeleteAll(fr)
 	}
@@ -52,7 +94,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	if dryRun {
+	if *dryRunFlag {
 		fmt.Print(string(content))
 		os.Exit(0)
 	}
@@ -73,12 +115,15 @@ func main() {
 		os.Exit(0)
 	}
 
-	if backup {
-		bakFile := fmt.Sprintf("%s.%d", file, time.Now().Unix())
+	if *backupFlag {
+		bakFile := fmt.Sprintf("%s.%d", *fileFlag, time.Now().Unix())
 		err = WriteFile(bakFile, originalContent)
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 
-	err = WriteFile(file, content)
+	err = WriteFile(*fileFlag, content)
 	if err != nil {
 		log.Fatal(err)
 	}
