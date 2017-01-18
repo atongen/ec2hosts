@@ -2,13 +2,18 @@ package main
 
 import (
 	"bufio"
+	"bytes"
+	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"net/url"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -46,8 +51,14 @@ type State uint8
 
 const (
 	Before State = iota
-	Inside
 	After
+	Inside
+	Outside
+)
+
+var (
+	StartMarkerRe = regexp.MustCompile(`^# START EC2HOSTS - .+ #$`)
+	EndMarkerRe   = regexp.MustCompile(`^# END EC2HOSTS - .+ #$`)
 )
 
 func GetInstance(inst *ec2.Instance) (*Instance, error) {
@@ -137,6 +148,184 @@ func Ec2Service(region string) (*ec2.EC2, error) {
 	return ec2.New(sess, &aws.Config{Region: aws.String(region)}), nil
 }
 
+func StartMarker(name string) string {
+	return fmt.Sprintf("# START EC2HOSTS - %s #", name)
+}
+
+func EndMarker(name string) string {
+	return fmt.Sprintf("# END EC2HOSTS - %s #", name)
+}
+
+func Update(input io.Reader, instances Instances, name, public string) ([]byte, error) {
+	var (
+		content bytes.Buffer
+		err     error
+	)
+
+	state := Before
+	startMarker := StartMarker(name)
+	endMarker := EndMarker(name)
+
+	scanner := bufio.NewScanner(input)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == startMarker {
+			if state == Before {
+				_, err = fmt.Fprintf(&content, "%s\n", startMarker)
+				if err != nil {
+					return content.Bytes(), err
+				}
+				state = Inside
+				for _, inst := range instances {
+					var ip string
+					if public != "" && strings.Contains(inst.Name, public) {
+						ip = inst.PublicIpAddress
+					} else {
+						ip = inst.PrivateIpAddress
+					}
+					_, err = fmt.Fprintf(&content, "%s %s\n", ip, inst.Name)
+					if err != nil {
+						return content.Bytes(), err
+					}
+				}
+			} else {
+				return content.Bytes(), errors.New("Invalid start marker")
+			}
+		} else if line == endMarker {
+			if state == Inside {
+				_, err = fmt.Fprintf(&content, "%s\n", endMarker)
+				if err != nil {
+					return content.Bytes(), err
+				}
+				state = After
+			} else {
+				return content.Bytes(), errors.New("Invalid end marker")
+			}
+		} else if state == Before || state == After {
+			_, err = fmt.Fprintf(&content, "%s\n", line)
+			if err != nil {
+				return content.Bytes(), err
+			}
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return content.Bytes(), err
+	}
+
+	if state == Before {
+		// no markers found
+		_, err = fmt.Fprintf(&content, "\n%s\n", startMarker)
+		if err != nil {
+			return content.Bytes(), err
+		}
+		for _, inst := range instances {
+			var ip string
+			if public != "" && strings.Contains(inst.Name, public) {
+				ip = inst.PublicIpAddress
+			} else {
+				ip = inst.PrivateIpAddress
+			}
+			_, err = fmt.Fprintf(&content, "%s %s\n", ip, inst.Name)
+			if err != nil {
+				return content.Bytes(), err
+			}
+		}
+		_, err = fmt.Fprintf(&content, "%s\n", endMarker)
+		if err != nil {
+			return content.Bytes(), err
+		}
+	}
+
+	return content.Bytes(), nil
+}
+
+func Delete(input io.Reader, name string) ([]byte, error) {
+	var (
+		content bytes.Buffer
+		err     error
+	)
+
+	state := Outside
+	startMarker := StartMarker(name)
+	endMarker := EndMarker(name)
+
+	scanner := bufio.NewScanner(input)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == startMarker {
+			if state == Outside {
+				state = Inside
+			} else {
+				return content.Bytes(), errors.New("Invalid start marker")
+			}
+		} else if line == endMarker {
+			if state == Inside {
+				state = Outside
+			} else {
+				return content.Bytes(), errors.New("Invalid end marker")
+			}
+		} else if state == Outside {
+			_, err = fmt.Fprintf(&content, "%s\n", line)
+			if err != nil {
+				return content.Bytes(), err
+			}
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return content.Bytes(), err
+	}
+
+	return content.Bytes(), nil
+}
+
+func DeleteAll(input io.Reader) ([]byte, error) {
+	var (
+		content bytes.Buffer
+		err     error
+	)
+
+	state := Outside
+
+	scanner := bufio.NewScanner(input)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if StartMarkerRe.MatchString(line) {
+			if state == Outside {
+				state = Inside
+			} else {
+				return content.Bytes(), errors.New("Invalid start marker")
+			}
+		} else if EndMarkerRe.MatchString(line) {
+			if state == Inside {
+				state = Outside
+			} else {
+				return content.Bytes(), errors.New("Invalid end marker")
+			}
+		} else if state == Outside {
+			_, err = fmt.Fprintf(&content, "%s\n", line)
+			if err != nil {
+				return content.Bytes(), err
+			}
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return content.Bytes(), err
+	}
+
+	return content.Bytes(), nil
+}
+
+func WriteFile(file string, content []byte) error {
+	fw, err := os.OpenFile(file, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	if err != nil {
+		return err
+	}
+	defer fw.Close()
+
+	_, err = fw.Write(content)
+	return err
+}
+
 func main() {
 	region := "us-east-1"
 
@@ -153,91 +342,60 @@ func main() {
 		log.Fatal(err)
 	}
 
+	action := "update"
 	name := "testApp"
-
-	startMarker := fmt.Sprintf("# START EC2HOSTS - %s #", name)
-	endMarker := fmt.Sprintf("# END EC2HOSTS - %s #", name)
-
-	content := []string{}
-
-	inFile := "/etc/hosts"
+	file := "/etc/hosts"
 	public := "ansible"
+	dryRun := false
+	backup := true
 
-	var fr io.ReadCloser
-	fr, err = os.OpenFile(inFile, os.O_RDONLY, 0644)
-
-	var state State = Before
-
-	scanner := bufio.NewScanner(fr)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if line == startMarker {
-			if state == Before {
-				content = append(content, startMarker)
-				state = Inside
-				for _, inst := range instances {
-					var ip string
-					if strings.Contains(inst.Name, public) {
-						ip = inst.PublicIpAddress
-					} else {
-						ip = inst.PrivateIpAddress
-					}
-					content = append(content, fmt.Sprintf("%s %s", ip, inst.Name))
-				}
-			} else {
-				log.Fatal("Invalid marker - start")
-			}
-		} else if line == endMarker {
-			if state == Inside {
-				content = append(content, endMarker)
-				state = After
-			} else {
-				log.Fatal("Invalid marker - end")
-			}
-		} else if state == Before || state == After {
-			content = append(content, line)
-		}
-	}
-	if err := scanner.Err(); err != nil {
-		log.Fatal(err)
-	}
-	fr.Close()
-
-	if state == Before {
-		// no markers found
-		content = append(content, "", startMarker)
-		for _, inst := range instances {
-			var ip string
-			if strings.Contains(inst.Name, public) {
-				ip = inst.PublicIpAddress
-			} else {
-				ip = inst.PrivateIpAddress
-			}
-			content = append(content, fmt.Sprintf("%s %s", ip, inst.Name))
-		}
-		content = append(content, endMarker)
-	}
-
-	var fw io.WriteCloser
-
-	outFile := ""
-
-	if outFile == "" {
-		fw = os.Stdout
-	} else {
-		fw, err = os.OpenFile(outFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
-		if err != nil {
-			log.Fatal(err)
-		}
-		defer fw.Close()
-	}
-
-	_, err = fw.Write([]byte(strings.Join(content, "\n")))
+	fr, err := os.OpenFile(file, os.O_RDONLY, 0644)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	_, err = fw.Write([]byte("\n"))
+	var content []byte
+	switch action {
+	default:
+		log.Fatalf("Unknown action: %s\n", action)
+	case "update":
+		content, err = Update(fr, instances, name, public)
+	case "delete":
+		content, err = Delete(fr, name)
+	case "delete-all":
+		content, err = DeleteAll(fr)
+	}
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if dryRun {
+		fmt.Print(string(content))
+		os.Exit(0)
+	}
+
+	_, err = fr.Seek(0, 0)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	originalContent, err := ioutil.ReadAll(fr)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fr.Close()
+
+	if bytes.Equal(originalContent, content) {
+		os.Exit(0)
+	}
+
+	if backup {
+		bakFile := fmt.Sprintf("%s.%d", file, time.Now().Unix())
+		err = WriteFile(bakFile, originalContent)
+	}
+
+	err = WriteFile(file, content)
 	if err != nil {
 		log.Fatal(err)
 	}
