@@ -11,6 +11,14 @@ import (
 	"time"
 )
 
+// build flags
+var (
+	Version   string = "unset"
+	BuildTime string = "unset"
+	BuildUser string = "unset"
+	BuildHash string = "unset"
+)
+
 type StrFlags []string
 
 func (s *StrFlags) String() string {
@@ -24,15 +32,16 @@ func (s *StrFlags) Set(value string) error {
 
 // cli flags
 var (
-	actionFlag = flag.String("action", "update", "Action to perform: 'update', 'delete', or 'delete-all'")
-	nameFlag   = flag.String("name", "", "Name of block of hosts in file")
-	regionFlag = flag.String("region", "us-east-1", "AWS Region")
-	vpcIdFlag  = flag.String("vpc-id", "", "Filter EC2 instances by vpc-id")
-	fileFlag   = flag.String("file", "/etc/hosts", "Path to file to update")
-	publicFlag = flag.String("public", "", "Pattern to use to match public hosts")
-	dryRunFlag = flag.Bool("dry-run", false, "Print updated file content to stdout only")
-	backupFlag = flag.Bool("backup", true, "Backup content of file before updating")
-	tagFlags   StrFlags
+	versionFlag = flag.Bool("v", false, "Print version information and exit")
+	actionFlag  = flag.String("action", "update", "Action to perform: 'update', 'delete', or 'delete-all'")
+	nameFlag    = flag.String("name", "", "Name of block of hosts in file")
+	regionFlag  = flag.String("region", "us-east-1", "AWS Region")
+	vpcIdFlag   = flag.String("vpc-id", "", "Filter EC2 instances by vpc-id")
+	fileFlag    = flag.String("file", "/etc/hosts", "Path to file to update")
+	publicFlag  = flag.String("public", "", "Pattern to use to match public hosts")
+	dryRunFlag  = flag.Bool("dry-run", false, "Print updated file content to stdout only")
+	backupFlag  = flag.Bool("backup", true, "Backup content of file before updating")
+	tagFlags    StrFlags
 )
 
 func init() {
@@ -41,6 +50,11 @@ func init() {
 
 func main() {
 	flag.Parse()
+
+	if *versionFlag {
+		fmt.Printf("ec2hosts %s %s %s %s\n", Version, BuildTime, BuildUser, BuildHash)
+		os.Exit(0)
+	}
 
 	if *actionFlag != "update" && *actionFlag != "delete" && *actionFlag != "delete-all" {
 		log.Fatal("action must be 'update', 'delete', or 'delete-all'")

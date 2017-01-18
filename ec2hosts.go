@@ -51,6 +51,7 @@ const (
 var (
 	StartMarkerRe = regexp.MustCompile(`^# START EC2HOSTS - .+ #$`)
 	EndMarkerRe   = regexp.MustCompile(`^# END EC2HOSTS - .+ #$`)
+	HostRe        = regexp.MustCompile(`^[A-Za-z0-9-]+$`)
 )
 
 func GetInstance(inst *ec2.Instance) (*Instance, error) {
@@ -133,7 +134,9 @@ func GetInstances(svc *ec2.EC2, filters map[string]string, tagFilters map[string
 				if err != nil {
 					return nil, err
 				}
-				instances = append(instances, instance)
+				if HostRe.MatchString(instance.Name) {
+					instances = append(instances, instance)
+				}
 			}
 		}
 
