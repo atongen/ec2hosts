@@ -2,7 +2,9 @@
 
 Queries AWS EC2 api and updates your local host file using instance name tag and public/private IP address.
 
-Intended for use with [sshuttle](https://github.com/sshuttle/sshuttle) or ssh ProxyCommand.
+Intended for use with `ssh ProxyCommand` or [sshuttle](https://github.com/sshuttle/sshuttle).
+
+Requires a valid AWS IAM access key and secret with permission to read EC2 metadata configured in `~/.aws/credentials`.
 
 Note: This is written in go. There is a similar ruby gem called [ec2_hosts](https://github.com/atongen/ec2_hosts).
 
