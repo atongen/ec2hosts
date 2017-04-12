@@ -21,6 +21,7 @@ type Instance struct {
 	Name             string
 	Id               string
 	Type             string
+	AvailabilityZone string
 	PrivateIpAddress string
 	PublicIpAddress  string
 }
@@ -76,6 +77,12 @@ func GetInstance(inst *ec2.Instance) (*Instance, error) {
 
 	if inst.PublicIpAddress != nil {
 		myInst.PublicIpAddress = *inst.PublicIpAddress
+	}
+
+	if inst.Placement != nil {
+		if inst.Placement.AvailabilityZone != nil {
+			myInst.AvailabilityZone = *inst.Placement.AvailabilityZone
+		}
 	}
 
 	return &myInst, nil
@@ -196,7 +203,7 @@ func Update(input io.Reader, instances Instances, name, public string) ([]byte, 
 					} else {
 						ip = inst.PrivateIpAddress
 					}
-					_, err = fmt.Fprintf(&content, "%s %s # %s %s\n", ip, inst.Name, inst.Id, inst.Type)
+					_, err = fmt.Fprintf(&content, "%s %s # %s %s\n", ip, inst.Name, inst.Type, inst.AvailabilityZone)
 					if err != nil {
 						return content.Bytes(), err
 					}
@@ -238,7 +245,7 @@ func Update(input io.Reader, instances Instances, name, public string) ([]byte, 
 			} else {
 				ip = inst.PrivateIpAddress
 			}
-			_, err = fmt.Fprintf(&content, "%s %s # %s %s\n", ip, inst.Name, inst.Id, inst.Type)
+			_, err = fmt.Fprintf(&content, "%s %s # %s %s\n", ip, inst.Name, inst.Type, inst.AvailabilityZone)
 			if err != nil {
 				return content.Bytes(), err
 			}
