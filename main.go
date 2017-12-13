@@ -7,16 +7,17 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"path"
 	"strings"
 	"time"
 )
 
 // build flags
 var (
-	Version   string = "unset"
+	Version   string = "development"
 	BuildTime string = "unset"
-	BuildUser string = "unset"
 	BuildHash string = "unset"
+	GoVersion string = "unset"
 )
 
 type StrFlags []string
@@ -49,11 +50,15 @@ func init() {
 	flag.Var(&tagFlags, "tag", "Add instance tag filters, should be of the form -tag 'key:value'")
 }
 
+func versionStr() string {
+	return fmt.Sprintf("%s %s %s %s %s", path.Base(os.Args[0]), Version, BuildTime, BuildHash, GoVersion)
+}
+
 func main() {
 	flag.Parse()
 
 	if *versionFlag {
-		fmt.Printf("ec2hosts %s %s %s %s\n", Version, BuildTime, BuildUser, BuildHash)
+		fmt.Println(versionStr())
 		os.Exit(0)
 	}
 
