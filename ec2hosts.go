@@ -18,26 +18,61 @@ import (
 )
 
 type Instance struct {
-	Name             string
-	Id               string
-	Type             string
-	AvailabilityZone string
-	PrivateIpAddress string
-	PublicIpAddress  string
+	i *ec2.Instance
 }
 
-type Instances []*Instance
+type Instances []Instance
 
 func (s Instances) Len() int {
 	return len(s)
 }
 
 func (s Instances) Less(i, j int) bool {
-	return s[i].Name < s[j].Name
+	return s[i].Name() < s[j].Name()
 }
 
 func (s Instances) Swap(i, j int) {
 	s[i], s[j] = s[j], s[i]
+}
+
+func (i Instance) Name() string {
+	name := i.Tag("Name")
+	if name == "" {
+		return i.Id()
+	}
+	return name
+}
+
+func (i Instance) Id() string {
+	return aws.StringValue(i.i.InstanceId)
+}
+
+func (i Instance) Tag(t string) string {
+	for _, keys := range i.i.Tags {
+		if *keys.Key == t {
+			return url.QueryEscape(*keys.Value)
+		}
+	}
+	return ""
+}
+
+func (i Instance) Type() string {
+	return aws.StringValue(i.i.InstanceType)
+}
+
+func (i Instance) PrivateIpAddress() string {
+	return aws.StringValue(i.i.PrivateIpAddress)
+}
+
+func (i Instance) PublicIpAddress() string {
+	return aws.StringValue(i.i.PublicIpAddress)
+}
+
+func (i Instance) AvailabilityZone() string {
+	if i.i.Placement != nil {
+		return aws.StringValue(i.i.Placement.AvailabilityZone)
+	}
+	return ""
 }
 
 type State uint8
@@ -54,39 +89,6 @@ var (
 	EndMarkerRe   = regexp.MustCompile(`^# END EC2HOSTS - .+ #$`)
 	HostRe        = regexp.MustCompile(`^[A-Za-z0-9-]+$`)
 )
-
-func GetInstance(inst *ec2.Instance) (*Instance, error) {
-	myInst := Instance{}
-	for _, keys := range inst.Tags {
-		if *keys.Key == "Name" {
-			myInst.Name = url.QueryEscape(*keys.Value)
-		}
-	}
-
-	if inst.InstanceId != nil {
-		myInst.Id = *inst.InstanceId
-	}
-
-	if inst.InstanceType != nil {
-		myInst.Type = *inst.InstanceType
-	}
-
-	if inst.PrivateIpAddress != nil {
-		myInst.PrivateIpAddress = *inst.PrivateIpAddress
-	}
-
-	if inst.PublicIpAddress != nil {
-		myInst.PublicIpAddress = *inst.PublicIpAddress
-	}
-
-	if inst.Placement != nil {
-		if inst.Placement.AvailabilityZone != nil {
-			myInst.AvailabilityZone = *inst.Placement.AvailabilityZone
-		}
-	}
-
-	return &myInst, nil
-}
 
 func GetInstances(svc *ec2.EC2, filters map[string]string, tagFilters map[string]string, exclude string) (Instances, error) {
 	myFilters := []*ec2.Filter{
@@ -137,12 +139,9 @@ func GetInstances(svc *ec2.EC2, filters map[string]string, tagFilters map[string
 
 		for _, res := range resp.Reservations {
 			for _, inst := range res.Instances {
-				instance, err := GetInstance(inst)
-				if err != nil {
-					return nil, err
-				}
-				if HostRe.MatchString(instance.Name) {
-					if exclude == "" || !strings.Contains(instance.Name, exclude) {
+				instance := Instance{inst}
+				if HostRe.MatchString(instance.Name()) {
+					if exclude == "" || !strings.Contains(instance.Name(), exclude) {
 						instances = append(instances, instance)
 					}
 				}
@@ -176,7 +175,23 @@ func EndMarker(name string) string {
 	return fmt.Sprintf("# END EC2HOSTS - %s #", name)
 }
 
-func Update(input io.Reader, instances Instances, name, public string) ([]byte, error) {
+func writeInstanceContent(w io.Writer, ip string, i Instance, tags []string) error {
+	f := []string{"%s %s # %s %s %s"}
+	a := []interface{}{ip, i.Name(), i.Id(), i.Type(), i.AvailabilityZone()}
+
+	for _, key := range tags {
+		value := i.Tag(key)
+		if value != "" {
+			f = append(f, "%s")
+			a = append(a, value)
+		}
+	}
+
+	_, err := fmt.Fprintf(w, strings.Join(f, " ")+"\n", a...)
+	return err
+}
+
+func Update(input io.Reader, instances Instances, name, public string, tags []string) ([]byte, error) {
 	var (
 		content bytes.Buffer
 		err     error
@@ -198,12 +213,12 @@ func Update(input io.Reader, instances Instances, name, public string) ([]byte, 
 				state = Inside
 				for _, inst := range instances {
 					var ip string
-					if public != "" && strings.Contains(inst.Name, public) {
-						ip = inst.PublicIpAddress
+					if public != "" && strings.Contains(inst.Name(), public) {
+						ip = inst.PublicIpAddress()
 					} else {
-						ip = inst.PrivateIpAddress
+						ip = inst.PrivateIpAddress()
 					}
-					_, err = fmt.Fprintf(&content, "%s %s # %s %s %s\n", ip, inst.Name, inst.Id, inst.Type, inst.AvailabilityZone)
+					err = writeInstanceContent(&content, ip, inst, tags)
 					if err != nil {
 						return content.Bytes(), err
 					}
@@ -240,12 +255,12 @@ func Update(input io.Reader, instances Instances, name, public string) ([]byte, 
 		}
 		for _, inst := range instances {
 			var ip string
-			if public != "" && strings.Contains(inst.Name, public) {
-				ip = inst.PublicIpAddress
+			if public != "" && strings.Contains(inst.Name(), public) {
+				ip = inst.PublicIpAddress()
 			} else {
-				ip = inst.PrivateIpAddress
+				ip = inst.PrivateIpAddress()
 			}
-			_, err = fmt.Fprintf(&content, "%s %s # %s %s %s\n", ip, inst.Name, inst.Id, inst.Type, inst.AvailabilityZone)
+			err = writeInstanceContent(&content, ip, inst, tags)
 			if err != nil {
 				return content.Bytes(), err
 			}

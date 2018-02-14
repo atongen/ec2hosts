@@ -44,10 +44,12 @@ var (
 	dryRunFlag  = flag.Bool("dry-run", false, "Print updated file content to stdout only")
 	backupFlag  = flag.Bool("backup", true, "Backup content of file before updating")
 	tagFlags    StrFlags
+	tagOutFlags StrFlags
 )
 
 func init() {
 	flag.Var(&tagFlags, "tag", "Add instance tag filters, should be of the form -tag 'key:value'")
+	flag.Var(&tagOutFlags, "tag-out", "Include value for tag in host file output, should be of the form -tag 'key'")
 }
 
 func versionStr() string {
@@ -104,7 +106,7 @@ func main() {
 	default:
 		log.Fatalf("Unknown action: %s\n", *actionFlag)
 	case "update":
-		content, err = Update(fr, instances, *nameFlag, *publicFlag)
+		content, err = Update(fr, instances, *nameFlag, *publicFlag, tagOutFlags)
 	case "delete":
 		content, err = Delete(fr, *nameFlag)
 	case "delete-all":
