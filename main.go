@@ -8,6 +8,9 @@ import (
 	"log"
 	"os"
 	"path"
+	"path/filepath"
+	"regexp"
+	"sort"
 	"strings"
 	"time"
 )
@@ -42,7 +45,7 @@ var (
 	publicFlag  = flag.String("public", "", "Pattern to use to match public hosts")
 	excludeFlag = flag.String("exclude", "", "Pattern of hostname to exclude")
 	dryRunFlag  = flag.Bool("dry-run", false, "Print updated file content to stdout only")
-	backupFlag  = flag.Bool("backup", true, "Backup content of file before updating")
+	backupFlag  = flag.Int("backup", 3, "Number of backup files to keep, 0 is no backup")
 	tagFlags    StrFlags
 	tagOutFlags StrFlags
 )
@@ -54,6 +57,56 @@ func init() {
 
 func versionStr() string {
 	return fmt.Sprintf("%s %s %s %s %s", path.Base(os.Args[0]), Version, BuildTime, BuildHash, GoVersion)
+}
+
+func getBackups(basePath string) ([]string, error) {
+	backups := []string{}
+
+	dir, file := filepath.Split(basePath)
+	if dir == "" || file == "" {
+		return backups, fmt.Errorf("Invalid basepath")
+	}
+
+	files, err := ioutil.ReadDir(dir)
+	if err != nil {
+		return backups, err
+	}
+
+	for _, f := range files {
+		s := path.Join(dir, f.Name())
+		matched, err := regexp.MatchString("^"+basePath+`\.\d+$`, s)
+		if err != nil {
+			log.Printf("Error matching for cleanup: %s", s)
+			continue
+		}
+
+		if matched {
+			backups = append(backups, s)
+		}
+	}
+
+	return backups, nil
+}
+
+func cleanupBackups(basePath string, numBackups int) error {
+	backups, err := getBackups(basePath)
+	if err != nil {
+		return err
+	}
+
+	if len(backups) <= numBackups {
+		return nil
+	}
+
+	sort.Strings(backups)
+	for i := 0; i < len(backups)-numBackups; i++ {
+		err = os.Remove(backups[i])
+		if err != nil {
+			log.Printf("Error deleting %s", backups[i])
+		}
+	}
+
+	return nil
 }
 
 func main() {
@@ -137,11 +190,15 @@ func main() {
 		os.Exit(0)
 	}
 
-	if *backupFlag {
+	if *backupFlag > 0 {
 		bakFile := fmt.Sprintf("%s.%d", *fileFlag, time.Now().Unix())
 		err = WriteFile(bakFile, originalContent)
 		if err != nil {
 			log.Fatal(err)
+		}
+		err = cleanupBackups(*fileFlag, *backupFlag)
+		if err != nil {
+			log.Printf("Error cleaning up old backup files: %s", err)
 		}
 	}
 
