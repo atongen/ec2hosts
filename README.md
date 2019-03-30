@@ -36,32 +36,34 @@ or
 λ ec2hosts -h
 Usage of ec2hosts:
   -action string
-        Action to perform: 'update', 'delete', or 'delete-all' (default "update")
-  -backup
-        Backup content of file before updating (default true)
+    	Action to perform: 'update', 'delete', or 'delete-all' (default "update")
+  -backup int
+    	Number of backup files to keep, 0 is no backup (default 3)
   -dry-run
-        Print updated file content to stdout only
+    	Print updated file content to stdout only
   -exclude string
-        Pattern of hostname to exclude
+    	Pattern of hostname to exclude
   -file string
-        Path to file to update (default "/etc/hosts")
+    	Path to file to update (default "/etc/hosts")
   -name string
-        Name of block of hosts in file
+    	Name of block of hosts in file
   -public string
-        Pattern to use to match public hosts
+    	Pattern to use to match public hosts
   -region string
-        AWS Region (default "us-east-1")
+    	AWS Region
   -tag value
-        Add instance tag filters, should be of the form -tag 'key:value'
-  -v    Print version information and exit
+    	Add instance tag filters, should be of the form -tag 'key:value'
+  -tag-out value
+    	Include value for tag in host file output, should be of the form -tag 'key'
+  -v	Print version information and exit
   -vpc-id string
-        Filter EC2 instances by vpc-id
+    	Filter EC2 instances by vpc-id
 ```
 
 ## example
 
 ```
-λ ec2hosts -name my-app -dry-run -public bastion
+λ ec2hosts -name my-app -dry-run -public bastion -region us-west-2
 127.0.0.1 localhost
 
 # The following lines are desirable for IPv6 capable hosts
