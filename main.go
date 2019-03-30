@@ -39,7 +39,7 @@ var (
 	versionFlag = flag.Bool("v", false, "Print version information and exit")
 	actionFlag  = flag.String("action", "update", "Action to perform: 'update', 'delete', or 'delete-all'")
 	nameFlag    = flag.String("name", "", "Name of block of hosts in file")
-	regionFlag  = flag.String("region", "us-east-1", "AWS Region")
+	regionFlag  = flag.String("region", "", "AWS Region")
 	vpcIdFlag   = flag.String("vpc-id", "", "Filter EC2 instances by vpc-id")
 	fileFlag    = flag.String("file", "/etc/hosts", "Path to file to update")
 	publicFlag  = flag.String("public", "", "Pattern to use to match public hosts")

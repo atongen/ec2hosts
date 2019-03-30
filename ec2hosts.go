@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/ec2metadata"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
 )
@@ -158,10 +159,30 @@ func GetInstances(svc *ec2.EC2, filters map[string]string, tagFilters map[string
 	return instances, nil
 }
 
+// getRegion deduces the current AWS Region.
+func getRegion(sess *session.Session) (string, error) {
+	region, present := os.LookupEnv("AWS_REGION")
+	if !present {
+		region, present = os.LookupEnv("AWS_DEFAULT_REGION")
+	}
+	if !present {
+		svc := ec2metadata.New(sess)
+		return svc.Region()
+	}
+	return region, nil
+}
+
 func Ec2Service(region string) (*ec2.EC2, error) {
 	sess, err := session.NewSession()
 	if err != nil {
 		return nil, err
+	}
+
+	if region == "" {
+		region, err = getRegion(sess)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return ec2.New(sess, &aws.Config{Region: aws.String(region)}), nil
