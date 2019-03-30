@@ -22,9 +22,7 @@ if [ -z "$CURRENT" ]; then
   exit 1
 fi
 
-gitstatus=`$GIT status 2> /dev/null | tail -n1`
-
-if [[ $gitstatus != *"working directory clean"* ]]; then
+if ! git diff-index --quiet HEAD --; then
   >&2 echo "please clean local changes on working copy before proceeding"
   exit 1
 fi
