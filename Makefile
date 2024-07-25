@@ -11,8 +11,6 @@ LDFLAGS=-ldflags "-X 'main.Version=$(VERSION)' \
 									-X 'main.BuildHash=$(BUILD_HASH)' \
 									-X 'main.GoVersion=$(GO_VERSION)'"
 
-export GO111MODULE=on
-
 all: clean test build
 
 clean:
