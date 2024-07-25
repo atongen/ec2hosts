@@ -37,7 +37,7 @@ dist: test distclean
 sign: dist
 	$(eval key := $(shell git config --get user.signingkey))
 	for file in dist/*; do \
-		gpg2 --armor --local-user ${key} --detach-sign $${file}; \
+		gpg --armor --local-user ${key} --detach-sign $${file}; \
 	done
 
 package: sign
